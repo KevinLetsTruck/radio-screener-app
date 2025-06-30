@@ -45,3 +45,15 @@ const ProductionScreenerApp = () => {
           >
             Cancel
           </button>
+        </div>
+      )}
+
+      <div style={{ marginTop: '20px' }}>
+        <h3>Ready Callers ({callers.length})</h3>
+        <p>No callers ready for host</p>
+      </div>
+    </div>
+  );
+};
+
+export default ProductionScreenerApp;
