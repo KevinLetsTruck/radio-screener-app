@@ -181,8 +181,8 @@ function App() {
       // Refresh caller list
       await fetchCallers()
 
-      // Switch to queue tab if sending to host
-      if (targetStatus === 'ready' || targetStatus === 'waiting') {
+      // Switch to queue tab after adding caller
+      if (targetStatus === 'active') {
         setActiveTab('queue')
       }
 
@@ -196,12 +196,12 @@ function App() {
 
   const addToQueue = async () => {
     console.log('Add to Queue clicked')
-    await submitCaller('waiting')
+    await submitCaller('active')  // Use 'active' instead of 'waiting'
   }
   
   const sendToHost = async () => {
     console.log('Send to Host clicked')
-    await submitCaller('ready')
+    await submitCaller('active')  // Use 'active' instead of 'ready'
   }
 
   const startNewCall = () => {
@@ -260,7 +260,7 @@ function App() {
 
   // Filter callers for different tabs
   const screeningCallers = callers.filter(caller => caller.status === 'screening')
-  const queueCallers = callers.filter(caller => ['waiting', 'ready'].includes(caller.status))
+  const queueCallers = callers.filter(caller => caller.status === 'active')  // All active callers go to queue
   const onAirCallers = callers.filter(caller => caller.status === 'on-air')
   const completedCallers = callers.filter(caller => caller.status === 'completed')
 
