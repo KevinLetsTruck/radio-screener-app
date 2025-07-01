@@ -10,6 +10,7 @@ function App() {
   const [showForm, setShowForm] = useState(false)
   const [lastUpdate, setLastUpdate] = useState(new Date())
   const [uploadedDocuments, setUploadedDocuments] = useState([])
+  const [activeTab, setActiveTab] = useState('screening') // 'screening' or 'queue'
 
   // Form state
   const [formData, setFormData] = useState({
@@ -42,7 +43,7 @@ function App() {
 
   useEffect(() => {
     fetchCallers()
-    const interval = setInterval(fetchCallers, 5000) // Poll every 5 seconds
+    const interval = setInterval(fetchCallers, 5000)
     return () => clearInterval(interval)
   }, [])
 
@@ -62,7 +63,6 @@ function App() {
   }
 
   const getCallerHistory = (phone) => {
-    // Look through existing callers for this phone number
     const history = callers.filter(caller => 
       caller.phone === phone && caller.id !== currentCaller?.id
     ).map(caller => ({
@@ -71,14 +71,19 @@ function App() {
       notes: caller.notes
     }))
     
-    return history.slice(0, 3) // Show last 3 calls
+    return history.slice(0, 3)
   }
 
   const extractTopicFromNotes = (notes) => {
     if (!notes) return 'No topic'
-    // Try to extract topic from notes (assuming format: "topic | notes | priority")
     const parts = notes.split('|')
-    return parts[0]?.trim() || notes.substring(0, 50) + '...'
+    return parts[0]?.replace('Topic:', '').trim() || notes.substring(0, 50) + '...'
+  }
+
+  const extractPriorityFromNotes = (notes) => {
+    if (!notes) return 'normal'
+    const priorityMatch = notes.match(/Priority: (\w+)/i)
+    return priorityMatch ? priorityMatch[1].toLowerCase() : 'normal'
   }
 
   const isReturningCaller = (phone) => {
@@ -89,7 +94,6 @@ function App() {
     const { name, value } = e.target
     const updatedData = { ...formData, [name]: value }
     
-    // Auto-detect priority when topic or notes change
     if (name === 'topic' || name === 'notes') {
       updatedData.priority = detectPriority(updatedData.topic, updatedData.notes)
     }
@@ -113,9 +117,8 @@ function App() {
     setUploadedDocuments(prev => prev.filter(doc => doc.id !== docId))
   }
 
-  const submitCaller = async () => {
+  const submitCaller = async (targetStatus = 'active') => {
     try {
-      // Format notes to include all screening information
       const detailedNotes = [
         `Topic: ${formData.topic}`,
         formData.notes ? `Notes: ${formData.notes}` : '',
@@ -123,7 +126,6 @@ function App() {
         uploadedDocuments.length > 0 ? `Documents: ${uploadedDocuments.map(d => d.name).join(', ')}` : ''
       ].filter(Boolean).join(' | ')
 
-      // Map our form data to your backend's structure
       const callerData = {
         name: formData.name,
         phone: formData.phone,
@@ -131,10 +133,8 @@ function App() {
         email: formData.email || '',
         notes: detailedNotes,
         caller_type: isReturningCaller(formData.phone) ? "regular" : "new",
-        status: formData.status === 'ready' ? 'ready' : 'active'
+        status: targetStatus
       }
-
-      console.log('Submitting caller data:', callerData)
 
       const response = await fetch(`${API_BASE}/api/callers`, {
         method: 'POST',
@@ -148,9 +148,6 @@ function App() {
         const errorText = await response.text()
         throw new Error(`Failed to add caller: ${response.status} - ${errorText}`)
       }
-
-      const result = await response.json()
-      console.log('Caller added successfully:', result)
 
       // Reset form
       setFormData({
@@ -168,23 +165,18 @@ function App() {
       setCurrentCaller(null)
       fetchCallers()
 
+      // Switch to queue tab if sending to host
+      if (targetStatus === 'ready') {
+        setActiveTab('queue')
+      }
+
     } catch (err) {
-      console.error('Error adding caller:', err)
       setError(`Error adding caller: ${err.message}`)
     }
   }
 
-  const addToQueue = () => {
-    const updatedData = { ...formData, status: 'waiting' }
-    setFormData(updatedData)
-    submitCaller()
-  }
-
-  const markAsReady = () => {
-    const updatedData = { ...formData, status: 'ready' }
-    setFormData(updatedData)
-    submitCaller()
-  }
+  const addToQueue = () => submitCaller('waiting')
+  const sendToHost = () => submitCaller('ready')
 
   const startNewCall = () => {
     setCurrentCaller({
@@ -203,28 +195,25 @@ function App() {
       status: 'screening'
     })
     setUploadedDocuments([])
+    setActiveTab('screening')
   }
 
-  const resumeCaller = (caller) => {
-    setCurrentCaller(caller)
-    // Extract data from the caller's notes
-    const notes = caller.notes || ''
-    const topicMatch = notes.match(/Topic: ([^|]+)/)
-    const notesMatch = notes.match(/Notes: ([^|]+)/)
-    const priorityMatch = notes.match(/Priority: (\w+)/)
-    
-    setFormData({
-      name: caller.name || '',
-      phone: caller.phone || '',
-      location: caller.location || '',
-      email: caller.email || '',
-      topic: topicMatch ? topicMatch[1].trim() : '',
-      notes: notesMatch ? notesMatch[1].trim() : '',
-      priority: priorityMatch ? priorityMatch[1].toLowerCase() : 'normal',
-      status: caller.status || 'screening'
-    })
-    setUploadedDocuments([]) // Reset documents for now
-    setShowForm(true)
+  const updateCallerStatus = async (callerId, newStatus) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/callers/${callerId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus })
+      })
+
+      if (response.ok) {
+        fetchCallers()
+      }
+    } catch (err) {
+      console.error('Error updating caller status:', err)
+    }
   }
 
   const formatFileSize = (bytes) => {
@@ -243,10 +232,11 @@ function App() {
     }
   }
 
-  // Filter callers based on status
-  const activeCallers = callers.filter(caller => caller.status === 'active')
+  // Filter callers for different tabs
   const screeningCallers = callers.filter(caller => caller.status === 'screening')
-  const waitingCallers = callers.filter(caller => caller.status === 'waiting' || caller.status === 'ready')
+  const queueCallers = callers.filter(caller => ['waiting', 'ready'].includes(caller.status))
+  const onAirCallers = callers.filter(caller => caller.status === 'on-air')
+  const completedCallers = callers.filter(caller => caller.status === 'completed')
 
   if (loading) {
     return (
@@ -274,7 +264,10 @@ function App() {
             <span>Screening: {screeningCallers.length}</span>
           </div>
           <div className="stat-item">
-            <span>Queue: {waitingCallers.length}</span>
+            <span>Queue: {queueCallers.length}</span>
+          </div>
+          <div className="stat-item">
+            <span>On Air: {onAirCallers.length}</span>
           </div>
           <div className="stat-item">
             <span>Updated: {lastUpdate.toLocaleTimeString()}</span>
@@ -289,31 +282,315 @@ function App() {
         </div>
       )}
 
-      {/* Main Content */}
-      {!showForm ? (
-        <div className="screener-main">
-          {/* New Call Button */}
-          <div className="action-section">
-            <button className="new-call-btn" onClick={startNewCall}>
-              📞 Screen New Caller
-            </button>
-          </div>
+      {/* Screening Form Modal */}
+      {showForm && (
+        <div className="modal-overlay">
+          <div className="screening-form">
+            <div className="form-header">
+              <h2>📋 Screening Call</h2>
+              <button className="close-btn" onClick={() => setShowForm(false)}>✕</button>
+            </div>
 
-          {/* Current Active Callers */}
-          <div className="section">
-            <h2>📋 All Callers ({callers.length})</h2>
-            {callers.length === 0 ? (
-              <div className="empty-state">
-                <p>No callers yet. Ready to screen new calls!</p>
+            <div className="form-content">
+              {/* Caller Information */}
+              <div className="form-section">
+                <h3>Caller Information</h3>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Caller Name *</label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      placeholder="Enter caller's name"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Phone Number *</label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      placeholder="555-123-4567"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Location</label>
+                    <input
+                      type="text"
+                      name="location"
+                      value={formData.location}
+                      onChange={handleInputChange}
+                      placeholder="City, State"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email (optional)</label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      placeholder="caller@email.com"
+                    />
+                  </div>
+                </div>
+
+                {/* Caller History */}
+                {formData.phone && isReturningCaller(formData.phone) && (
+                  <div className="caller-history-section">
+                    <h4>📋 Previous Calls</h4>
+                    <div className="history-list">
+                      {getCallerHistory(formData.phone).map((call, index) => (
+                        <div key={index} className="history-item">
+                          <div className="history-date">{call.date}</div>
+                          <div className="history-topic">{call.topic}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="calls-grid">
-                {callers.map(caller => {
-                  const callerHistory = getCallerHistory(caller.phone)
-                  const extractedTopic = extractTopicFromNotes(caller.notes)
-                  
-                  return (
-                    <div key={caller.id} className="caller-card" onClick={() => resumeCaller(caller)}>
+
+              {/* Call Details */}
+              <div className="form-section">
+                <h3>Call Details</h3>
+                <div className="form-group">
+                  <label>Topic/Question *</label>
+                  <textarea
+                    name="topic"
+                    value={formData.topic}
+                    onChange={handleInputChange}
+                    placeholder="What does the caller want to discuss?"
+                    rows="3"
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Screening Notes</label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    placeholder="Additional notes, background info, specific questions..."
+                    rows="4"
+                  />
+                </div>
+                
+                {/* Auto-detected Priority */}
+                <div className="priority-display">
+                  <label>Auto-Detected Priority</label>
+                  <div className={`priority-indicator priority-${formData.priority}`}>
+                    <span className="priority-dot" style={{ backgroundColor: getPriorityColor(formData.priority) }}></span>
+                    {formData.priority.toUpperCase()}
+                    {formData.priority === 'high' && ' - Urgent/Emergency detected'}
+                    {formData.priority === 'medium' && ' - Issue/Problem detected'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Document Upload */}
+              <div className="form-section">
+                <h3>Documents</h3>
+                <div className="upload-area">
+                  <input
+                    type="file"
+                    id="file-upload"
+                    multiple
+                    onChange={handleFileUpload}
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt"
+                    style={{ display: 'none' }}
+                  />
+                  <label htmlFor="file-upload" className="upload-button">
+                    📎 Upload Documents
+                  </label>
+                  <p className="upload-hint">
+                    Oil samples, health assessments, photos, etc.
+                  </p>
+                </div>
+
+                {/* Uploaded Documents */}
+                {uploadedDocuments.length > 0 && (
+                  <div className="uploaded-docs">
+                    <h4>Uploaded Documents ({uploadedDocuments.length})</h4>
+                    {uploadedDocuments.map(doc => (
+                      <div key={doc.id} className="doc-item">
+                        <div className="doc-info">
+                          <span className="doc-name">{doc.name}</span>
+                          <span className="doc-size">{formatFileSize(doc.size)}</span>
+                        </div>
+                        <button className="doc-remove" onClick={() => removeDocument(doc.id)}>
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="form-actions">
+                <button className="btn-secondary" onClick={() => setShowForm(false)}>
+                  Cancel
+                </button>
+                <button 
+                  className="btn-queue" 
+                  onClick={addToQueue}
+                  disabled={!formData.name || !formData.phone || !formData.topic}
+                >
+                  Add to Queue
+                </button>
+                <button 
+                  className="btn-ready" 
+                  onClick={sendToHost}
+                  disabled={!formData.name || !formData.phone || !formData.topic}
+                >
+                  Send to Host
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab Navigation */}
+      <div className="tab-navigation">
+        <button 
+          className={`tab-button ${activeTab === 'screening' ? 'active' : ''}`}
+          onClick={() => setActiveTab('screening')}
+        >
+          📞 Screening ({screeningCallers.length})
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'queue' ? 'active' : ''}`}
+          onClick={() => setActiveTab('queue')}
+        >
+          📺 Queue & Live ({queueCallers.length + onAirCallers.length})
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      <div className="tab-content">
+        {activeTab === 'screening' && (
+          <div className="screening-tab">
+            {/* New Call Button */}
+            <div className="action-section">
+              <button className="new-call-btn" onClick={startNewCall}>
+                📞 Screen New Caller
+              </button>
+            </div>
+
+            {/* Active Screening Sessions */}
+            {screeningCallers.length > 0 && (
+              <div className="section">
+                <h2>🔄 Active Screening Sessions</h2>
+                <div className="calls-grid">
+                  {screeningCallers.map(caller => (
+                    <div key={caller.id} className="caller-card screening">
+                      <div className="caller-header">
+                        <div className="caller-info">
+                          <div className="caller-name">{caller.name}</div>
+                          <div className="caller-phone">{caller.phone}</div>
+                          {caller.location && (
+                            <div className="caller-location">📍 {caller.location}</div>
+                          )}
+                        </div>
+                        <div className="status-badge status-screening">SCREENING</div>
+                      </div>
+                      
+                      <div className="caller-topic">
+                        <strong>Topic:</strong> {extractTopicFromNotes(caller.notes)}
+                      </div>
+                      
+                      <div className="caller-actions">
+                        <button 
+                          className="btn-queue"
+                          onClick={() => updateCallerStatus(caller.id, 'waiting')}
+                        >
+                          → Queue
+                        </button>
+                        <button 
+                          className="btn-ready"
+                          onClick={() => updateCallerStatus(caller.id, 'ready')}
+                        >
+                          → Host
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {screeningCallers.length === 0 && !showForm && (
+              <div className="empty-state">
+                <h3>No Active Screening Sessions</h3>
+                <p>Ready to screen new callers!</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'queue' && (
+          <div className="queue-tab">
+            {/* On Air Section */}
+            {onAirCallers.length > 0 && (
+              <div className="section">
+                <h2>🔴 Currently On Air</h2>
+                <div className="calls-grid">
+                  {onAirCallers.map(caller => (
+                    <div key={caller.id} className="caller-card on-air">
+                      <div className="caller-header">
+                        <div className="caller-info">
+                          <div className="caller-name">{caller.name}</div>
+                          <div className="caller-phone">{caller.phone}</div>
+                          {caller.location && (
+                            <div className="caller-location">📍 {caller.location}</div>
+                          )}
+                        </div>
+                        <div className="status-badge status-on-air">🔴 ON AIR</div>
+                      </div>
+                      
+                      <div className="caller-topic">
+                        <strong>Topic:</strong> {extractTopicFromNotes(caller.notes)}
+                      </div>
+                      
+                      <div className="priority-indicator">
+                        Priority: {extractPriorityFromNotes(caller.notes).toUpperCase()}
+                      </div>
+                      
+                      <div className="caller-actions">
+                        <button 
+                          className="btn-complete"
+                          onClick={() => updateCallerStatus(caller.id, 'completed')}
+                        >
+                          Complete Call
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Queue Section */}
+            <div className="section">
+              <h2>⏳ Caller Queue ({queueCallers.length})</h2>
+              {queueCallers.length === 0 ? (
+                <div className="empty-state">
+                  <p>No callers in queue</p>
+                </div>
+              ) : (
+                <div className="calls-grid">
+                  {queueCallers.map(caller => (
+                    <div key={caller.id} className="caller-card queue">
                       <div className="caller-header">
                         <div className="caller-info">
                           <div className="caller-name">{caller.name}</div>
@@ -325,221 +602,49 @@ function App() {
                             <div className="returning-badge">Returning Caller</div>
                           )}
                         </div>
-                        <div className="caller-status">
-                          <div className={`status-badge status-${caller.status}`}>
-                            {caller.status?.toUpperCase()}
-                          </div>
+                        <div className={`status-badge status-${caller.status}`}>
+                          {caller.status === 'ready' ? '✅ READY' : '⏳ WAITING'}
                         </div>
                       </div>
                       
                       <div className="caller-topic">
-                        <strong>Topic:</strong> {extractedTopic}
+                        <strong>Topic:</strong> {extractTopicFromNotes(caller.notes)}
                       </div>
                       
-                      {caller.notes && (
-                        <div className="caller-notes">
-                          <strong>Notes:</strong> {caller.notes.substring(0, 100)}
-                          {caller.notes.length > 100 && '...'}
-                        </div>
-                      )}
+                      <div className="priority-indicator">
+                        Priority: {extractPriorityFromNotes(caller.notes).toUpperCase()}
+                      </div>
                       
                       <div className="caller-meta">
                         <span className="caller-time">
                           📅 {new Date(caller.last_call_date).toLocaleDateString()}
                         </span>
-                        <span className="total-calls">
-                          📞 {caller.total_calls} calls
-                        </span>
                       </div>
-
-                      {callerHistory.length > 0 && (
-                        <div className="caller-history-preview">
-                          <div className="history-title">Previous: {callerHistory[0].topic}</div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* Screening Form */
-        <div className="screening-form">
-          <div className="form-header">
-            <h2>📋 Screening Call</h2>
-            <button className="close-btn" onClick={() => setShowForm(false)}>✕</button>
-          </div>
-
-          <div className="form-content">
-            {/* Caller Information */}
-            <div className="form-section">
-              <h3>Caller Information</h3>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Caller Name *</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    placeholder="Enter caller's name"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Phone Number *</label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    placeholder="555-123-4567"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Location</label>
-                  <input
-                    type="text"
-                    name="location"
-                    value={formData.location}
-                    onChange={handleInputChange}
-                    placeholder="City, State"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Email (optional)</label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    placeholder="caller@email.com"
-                  />
-                </div>
-              </div>
-
-              {/* Caller History */}
-              {formData.phone && isReturningCaller(formData.phone) && (
-                <div className="caller-history-section">
-                  <h4>📋 Previous Calls</h4>
-                  <div className="history-list">
-                    {getCallerHistory(formData.phone).map((call, index) => (
-                      <div key={index} className="history-item">
-                        <div className="history-date">{call.date}</div>
-                        <div className="history-topic">{call.topic}</div>
-                        <div className="history-notes">{call.notes}</div>
+                      
+                      <div className="caller-actions">
+                        <button 
+                          className="btn-secondary"
+                          onClick={() => updateCallerStatus(caller.id, 'screening')}
+                        >
+                          Back to Screening
+                        </button>
+                        {caller.status === 'waiting' && (
+                          <button 
+                            className="btn-ready"
+                            onClick={() => updateCallerStatus(caller.id, 'ready')}
+                          >
+                            Mark Ready
+                          </button>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Call Details */}
-            <div className="form-section">
-              <h3>Call Details</h3>
-              <div className="form-group">
-                <label>Topic/Question *</label>
-                <textarea
-                  name="topic"
-                  value={formData.topic}
-                  onChange={handleInputChange}
-                  placeholder="What does the caller want to discuss?"
-                  rows="3"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Screening Notes</label>
-                <textarea
-                  name="notes"
-                  value={formData.notes}
-                  onChange={handleInputChange}
-                  placeholder="Additional notes, background info, specific questions..."
-                  rows="4"
-                />
-              </div>
-              
-              {/* Auto-detected Priority */}
-              <div className="priority-display">
-                <label>Auto-Detected Priority</label>
-                <div className={`priority-indicator priority-${formData.priority}`}>
-                  <span className="priority-dot" style={{ backgroundColor: getPriorityColor(formData.priority) }}></span>
-                  {formData.priority.toUpperCase()}
-                  {formData.priority === 'high' && ' - Urgent/Emergency detected'}
-                  {formData.priority === 'medium' && ' - Issue/Problem detected'}
-                </div>
-              </div>
-            </div>
-
-            {/* Document Upload */}
-            <div className="form-section">
-              <h3>Documents</h3>
-              <div className="upload-area">
-                <input
-                  type="file"
-                  id="file-upload"
-                  multiple
-                  onChange={handleFileUpload}
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt"
-                  style={{ display: 'none' }}
-                />
-                <label htmlFor="file-upload" className="upload-button">
-                  📎 Upload Documents
-                </label>
-                <p className="upload-hint">
-                  Oil samples, health assessments, photos, etc.
-                </p>
-              </div>
-
-              {/* Uploaded Documents */}
-              {uploadedDocuments.length > 0 && (
-                <div className="uploaded-docs">
-                  <h4>Uploaded Documents ({uploadedDocuments.length})</h4>
-                  {uploadedDocuments.map(doc => (
-                    <div key={doc.id} className="doc-item">
-                      <div className="doc-info">
-                        <span className="doc-name">{doc.name}</span>
-                        <span className="doc-size">{formatFileSize(doc.size)}</span>
-                      </div>
-                      <button className="doc-remove" onClick={() => removeDocument(doc.id)}>
-                        ✕
-                      </button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-
-            {/* Action Buttons */}
-            <div className="form-actions">
-              <button className="btn-secondary" onClick={() => setShowForm(false)}>
-                Cancel
-              </button>
-              <button 
-                className="btn-queue" 
-                onClick={addToQueue}
-                disabled={!formData.name || !formData.phone || !formData.topic}
-              >
-                Add to Queue
-              </button>
-              <button 
-                className="btn-ready" 
-                onClick={markAsReady}
-                disabled={!formData.name || !formData.phone || !formData.topic}
-              >
-                Send to Host
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
