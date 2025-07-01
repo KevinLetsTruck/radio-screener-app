@@ -1,4 +1,4 @@
-/* Let's Truck Tribe Dark Theme - Screener App */
+/* Let's Truck Tribe Dark Theme - Tabbed Screener App */
 :root {
   --bg-primary: #1a1a1a;
   --bg-secondary: #2d2d2d;
@@ -41,7 +41,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
   padding: 20px;
   background: var(--bg-secondary);
   border-radius: 12px;
@@ -98,6 +98,45 @@ body {
   color: var(--text-secondary);
 }
 
+/* Tab Navigation */
+.tab-navigation {
+  display: flex;
+  gap: 0;
+  margin-bottom: 25px;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  padding: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.tab-button {
+  flex: 1;
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+}
+
+.tab-button:hover {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.tab-button.active {
+  background: var(--accent-orange);
+  color: white;
+}
+
+/* Tab Content */
+.tab-content {
+  min-height: 400px;
+}
+
 /* Error Banner */
 .error-banner {
   display: flex;
@@ -120,15 +159,10 @@ body {
   font-weight: 500;
 }
 
-/* Main Content */
-.screener-main {
-  display: flex;
-  flex-direction: column;
-  gap: 30px;
-}
-
+/* Action Section */
 .action-section {
   text-align: center;
+  margin-bottom: 30px;
 }
 
 .new-call-btn {
@@ -154,12 +188,13 @@ body {
   border-radius: 12px;
   padding: 25px;
   border: 1px solid var(--border-color);
+  margin-bottom: 25px;
 }
 
 .section h2 {
   margin-bottom: 20px;
   color: var(--text-primary);
-  font-size: 20px;
+  font-size: 18px;
 }
 
 /* Calls Grid */
@@ -182,13 +217,22 @@ body {
   box-shadow: 0 8px 25px rgba(0,0,0,0.3);
 }
 
-.caller-card.resumable {
-  cursor: pointer;
-  border-color: var(--accent-blue);
+.caller-card.screening {
+  border-left: 4px solid var(--warning-yellow);
 }
 
-.caller-card.resumable:hover {
-  border-color: var(--accent-orange);
+.caller-card.queue {
+  border-left: 4px solid var(--accent-blue);
+}
+
+.caller-card.on-air {
+  border-left: 4px solid var(--danger-red);
+  animation: glow 2s infinite;
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 5px var(--danger-red); }
+  50% { box-shadow: 0 0 20px var(--danger-red); }
 }
 
 .caller-header {
@@ -213,6 +257,12 @@ body {
   font-size: 14px;
   color: var(--text-secondary);
   font-family: monospace;
+  margin-bottom: 4px;
+}
+
+.caller-location {
+  font-size: 12px;
+  color: var(--text-secondary);
   margin-bottom: 8px;
 }
 
@@ -227,37 +277,33 @@ body {
   text-transform: uppercase;
 }
 
-.resume-badge {
-  background: var(--accent-orange);
-  color: white;
+.status-badge {
   padding: 6px 12px;
   border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.priority-badge {
-  padding: 4px 8px;
-  border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
 }
 
-.priority-badge.priority-high {
-  background: var(--danger-red);
-  color: white;
-}
-
-.priority-badge.priority-medium {
+.status-screening {
   background: var(--warning-yellow);
   color: #000;
 }
 
-.priority-badge.priority-normal {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
+.status-waiting {
+  background: var(--accent-blue);
+  color: white;
+}
+
+.status-ready {
+  background: var(--success-green);
+  color: white;
+}
+
+.status-on-air {
+  background: var(--danger-red);
+  color: white;
+  animation: pulse 2s infinite;
 }
 
 .caller-topic {
@@ -267,11 +313,12 @@ body {
   line-height: 1.4;
 }
 
-.caller-notes {
-  font-size: 13px;
+.priority-indicator {
+  font-size: 12px;
   color: var(--text-secondary);
-  margin-bottom: 15px;
-  line-height: 1.4;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  font-weight: 500;
 }
 
 .caller-meta {
@@ -281,6 +328,7 @@ body {
   padding-top: 12px;
   border-top: 1px solid var(--border-color);
   font-size: 12px;
+  margin-bottom: 10px;
 }
 
 .caller-time {
@@ -288,30 +336,58 @@ body {
   font-weight: 500;
 }
 
-.documents-indicator {
-  color: var(--warning-yellow);
-  font-weight: 500;
-}
-
-.priority-indicator {
+.caller-actions {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.caller-actions button {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.3s ease;
 }
 
-.priority-indicator.priority-high {
-  color: var(--danger-red);
+.btn-queue {
+  background: var(--accent-blue);
+  color: white;
 }
 
-.priority-indicator.priority-medium {
-  color: var(--warning-yellow);
+.btn-queue:hover {
+  background: #357abd;
 }
 
-.priority-indicator.priority-normal {
-  color: var(--text-secondary);
+.btn-ready {
+  background: var(--success-green);
+  color: white;
+}
+
+.btn-ready:hover {
+  background: #218838;
+}
+
+.btn-complete {
+  background: var(--warning-yellow);
+  color: #000;
+}
+
+.btn-complete:hover {
+  background: #e0a800;
+}
+
+.btn-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-primary);
 }
 
 .empty-state {
@@ -320,12 +396,37 @@ body {
   color: var(--text-secondary);
 }
 
+.empty-state h3 {
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
 /* Screening Form */
 .screening-form {
   background: var(--bg-secondary);
   border-radius: 12px;
   border: 1px solid var(--border-color);
+  width: 100%;
+  max-width: 800px;
+  max-height: 90vh;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .form-header {
@@ -335,6 +436,7 @@ body {
   padding: 20px 25px;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .form-header h2 {
@@ -359,6 +461,8 @@ body {
 
 .form-content {
   padding: 25px;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .form-section {
@@ -453,11 +557,6 @@ body {
   margin: 2px 0;
 }
 
-.history-notes {
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
 /* Priority Display */
 .priority-display {
   background: var(--bg-card);
@@ -473,7 +572,7 @@ body {
   margin-bottom: 8px;
 }
 
-.priority-dot {
+.priority-indicator .priority-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -572,6 +671,7 @@ body {
   justify-content: flex-end;
   padding-top: 20px;
   border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .form-actions button {
@@ -581,34 +681,6 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-}
-
-.btn-secondary {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-}
-
-.btn-secondary:hover {
-  background: var(--bg-primary);
-}
-
-.btn-queue {
-  background: var(--accent-blue);
-  color: white;
-}
-
-.btn-queue:hover {
-  background: #357abd;
-}
-
-.btn-ready {
-  background: var(--success-green);
-  color: white;
-}
-
-.btn-ready:hover {
-  background: #218838;
 }
 
 .form-actions button:disabled {
@@ -641,6 +713,11 @@ body {
   
   .header-stats {
     justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .tab-navigation {
+    flex-direction: column;
   }
   
   .form-row {
@@ -653,5 +730,17 @@ body {
   
   .form-actions {
     flex-direction: column;
+  }
+  
+  .caller-actions {
+    flex-direction: column;
+  }
+  
+  .modal-overlay {
+    padding: 10px;
+  }
+  
+  .screening-form {
+    max-height: 95vh;
   }
 }
