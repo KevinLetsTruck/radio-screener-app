@@ -15,6 +15,8 @@ function App() {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
+    location: '',
+    email: '',
     topic: '',
     notes: '',
     priority: 'normal',
@@ -60,21 +62,27 @@ function App() {
   }
 
   const getCallerHistory = (phone) => {
-    // Mock history data - replace with real API call
-    const historyData = {
-      '555-0123': [
-        { date: '2024-12-15', topic: 'DEF fluid questions', notes: 'Resolved - advised on proper brand' },
-        { date: '2024-11-20', topic: 'Transmission issues', notes: 'Follow-up needed' }
-      ],
-      '555-0456': [
-        { date: '2024-12-10', topic: 'Fuel efficiency tips', notes: 'Provided driving recommendations' }
-      ]
-    }
-    return historyData[phone] || []
+    // Look through existing callers for this phone number
+    const history = callers.filter(caller => 
+      caller.phone === phone && caller.id !== currentCaller?.id
+    ).map(caller => ({
+      date: new Date(caller.last_call_date).toLocaleDateString(),
+      topic: extractTopicFromNotes(caller.notes),
+      notes: caller.notes
+    }))
+    
+    return history.slice(0, 3) // Show last 3 calls
+  }
+
+  const extractTopicFromNotes = (notes) => {
+    if (!notes) return 'No topic'
+    // Try to extract topic from notes (assuming format: "topic | notes | priority")
+    const parts = notes.split('|')
+    return parts[0]?.trim() || notes.substring(0, 50) + '...'
   }
 
   const isReturningCaller = (phone) => {
-    return getCallerHistory(phone).length > 0
+    return callers.some(caller => caller.phone === phone)
   }
 
   const handleInputChange = (e) => {
@@ -107,11 +115,26 @@ function App() {
 
   const submitCaller = async () => {
     try {
+      // Format notes to include all screening information
+      const detailedNotes = [
+        `Topic: ${formData.topic}`,
+        formData.notes ? `Notes: ${formData.notes}` : '',
+        `Priority: ${formData.priority.toUpperCase()}`,
+        uploadedDocuments.length > 0 ? `Documents: ${uploadedDocuments.map(d => d.name).join(', ')}` : ''
+      ].filter(Boolean).join(' | ')
+
+      // Map our form data to your backend's structure
       const callerData = {
-        ...formData,
-        timestamp: new Date().toISOString(),
-        documents: uploadedDocuments
+        name: formData.name,
+        phone: formData.phone,
+        location: formData.location || '',
+        email: formData.email || '',
+        notes: detailedNotes,
+        caller_type: isReturningCaller(formData.phone) ? "regular" : "new",
+        status: formData.status === 'ready' ? 'ready' : 'active'
       }
+
+      console.log('Submitting caller data:', callerData)
 
       const response = await fetch(`${API_BASE}/api/callers`, {
         method: 'POST',
@@ -122,13 +145,19 @@ function App() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to add caller')
+        const errorText = await response.text()
+        throw new Error(`Failed to add caller: ${response.status} - ${errorText}`)
       }
+
+      const result = await response.json()
+      console.log('Caller added successfully:', result)
 
       // Reset form
       setFormData({
         name: '',
         phone: '',
+        location: '',
+        email: '',
         topic: '',
         notes: '',
         priority: 'normal',
@@ -140,7 +169,8 @@ function App() {
       fetchCallers()
 
     } catch (err) {
-      setError(err.message)
+      console.error('Error adding caller:', err)
+      setError(`Error adding caller: ${err.message}`)
     }
   }
 
@@ -165,6 +195,8 @@ function App() {
     setFormData({
       name: '',
       phone: '',
+      location: '',
+      email: '',
       topic: '',
       notes: '',
       priority: 'normal',
@@ -175,15 +207,23 @@ function App() {
 
   const resumeCaller = (caller) => {
     setCurrentCaller(caller)
+    // Extract data from the caller's notes
+    const notes = caller.notes || ''
+    const topicMatch = notes.match(/Topic: ([^|]+)/)
+    const notesMatch = notes.match(/Notes: ([^|]+)/)
+    const priorityMatch = notes.match(/Priority: (\w+)/)
+    
     setFormData({
       name: caller.name || '',
       phone: caller.phone || '',
-      topic: caller.topic || '',
-      notes: caller.notes || '',
-      priority: caller.priority || 'normal',
+      location: caller.location || '',
+      email: caller.email || '',
+      topic: topicMatch ? topicMatch[1].trim() : '',
+      notes: notesMatch ? notesMatch[1].trim() : '',
+      priority: priorityMatch ? priorityMatch[1].toLowerCase() : 'normal',
       status: caller.status || 'screening'
     })
-    setUploadedDocuments(caller.documents || [])
+    setUploadedDocuments([]) // Reset documents for now
     setShowForm(true)
   }
 
@@ -203,9 +243,10 @@ function App() {
     }
   }
 
-  const activeCallers = callers.filter(caller => caller.status !== 'completed')
+  // Filter callers based on status
+  const activeCallers = callers.filter(caller => caller.status === 'active')
   const screeningCallers = callers.filter(caller => caller.status === 'screening')
-  const waitingCallers = callers.filter(caller => caller.status === 'waiting')
+  const waitingCallers = callers.filter(caller => caller.status === 'waiting' || caller.status === 'ready')
 
   if (loading) {
     return (
@@ -233,7 +274,7 @@ function App() {
             <span>Screening: {screeningCallers.length}</span>
           </div>
           <div className="stat-item">
-            <span>Waiting: {waitingCallers.length}</span>
+            <span>Queue: {waitingCallers.length}</span>
           </div>
           <div className="stat-item">
             <span>Updated: {lastUpdate.toLocaleTimeString()}</span>
@@ -243,8 +284,8 @@ function App() {
 
       {error && (
         <div className="error-banner">
-          <span>⚠️ Connection Error: {error}</span>
-          <button onClick={fetchCallers}>Retry</button>
+          <span>⚠️ {error}</span>
+          <button onClick={() => setError(null)}>✕</button>
         </div>
       )}
 
@@ -258,76 +299,67 @@ function App() {
             </button>
           </div>
 
-          {/* Active Calls Section */}
-          {screeningCallers.length > 0 && (
-            <div className="section">
-              <h2>🔄 Calls in Progress</h2>
-              <div className="calls-grid">
-                {screeningCallers.map(caller => (
-                  <div key={caller.id} className="caller-card resumable" onClick={() => resumeCaller(caller)}>
-                    <div className="caller-header">
-                      <div className="caller-info">
-                        <div className="caller-name">{caller.name || 'Unnamed Caller'}</div>
-                        <div className="caller-phone">{caller.phone}</div>
-                      </div>
-                      <div className="resume-badge">Resume</div>
-                    </div>
-                    <div className="caller-topic">{caller.topic || 'No topic specified'}</div>
-                    <div className="caller-meta">
-                      <span className="caller-time">⏱️ In progress</span>
-                      <span className={`priority-indicator priority-${caller.priority}`}>
-                        {caller.priority?.toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Waiting Queue */}
+          {/* Current Active Callers */}
           <div className="section">
-            <h2>⏳ Caller Queue ({waitingCallers.length})</h2>
-            {waitingCallers.length === 0 ? (
+            <h2>📋 All Callers ({callers.length})</h2>
+            {callers.length === 0 ? (
               <div className="empty-state">
-                <p>No callers in queue. Ready to screen new calls!</p>
+                <p>No callers yet. Ready to screen new calls!</p>
               </div>
             ) : (
               <div className="calls-grid">
-                {waitingCallers.map(caller => (
-                  <div key={caller.id} className="caller-card">
-                    <div className="caller-header">
-                      <div className="caller-info">
-                        <div className="caller-name">{caller.name}</div>
-                        <div className="caller-phone">{caller.phone}</div>
-                        {isReturningCaller(caller.phone) && (
-                          <div className="returning-badge">Returning Caller</div>
-                        )}
+                {callers.map(caller => {
+                  const callerHistory = getCallerHistory(caller.phone)
+                  const extractedTopic = extractTopicFromNotes(caller.notes)
+                  
+                  return (
+                    <div key={caller.id} className="caller-card" onClick={() => resumeCaller(caller)}>
+                      <div className="caller-header">
+                        <div className="caller-info">
+                          <div className="caller-name">{caller.name}</div>
+                          <div className="caller-phone">{caller.phone}</div>
+                          {caller.location && (
+                            <div className="caller-location">📍 {caller.location}</div>
+                          )}
+                          {caller.caller_type === 'regular' && (
+                            <div className="returning-badge">Returning Caller</div>
+                          )}
+                        </div>
+                        <div className="caller-status">
+                          <div className={`status-badge status-${caller.status}`}>
+                            {caller.status?.toUpperCase()}
+                          </div>
+                        </div>
                       </div>
-                      <div className={`priority-badge priority-${caller.priority}`}>
-                        {caller.priority?.toUpperCase()}
+                      
+                      <div className="caller-topic">
+                        <strong>Topic:</strong> {extractedTopic}
                       </div>
-                    </div>
-                    <div className="caller-topic">
-                      <strong>Topic:</strong> {caller.topic}
-                    </div>
-                    {caller.notes && (
-                      <div className="caller-notes">
-                        <strong>Notes:</strong> {caller.notes}
-                      </div>
-                    )}
-                    <div className="caller-meta">
-                      <span className="caller-time">
-                        ⏱️ {Math.floor((new Date() - new Date(caller.timestamp)) / (1000 * 60))} min
-                      </span>
-                      {caller.documents && caller.documents.length > 0 && (
-                        <span className="documents-indicator">
-                          📎 {caller.documents.length} docs
+                      
+                      {caller.notes && (
+                        <div className="caller-notes">
+                          <strong>Notes:</strong> {caller.notes.substring(0, 100)}
+                          {caller.notes.length > 100 && '...'}
+                        </div>
+                      )}
+                      
+                      <div className="caller-meta">
+                        <span className="caller-time">
+                          📅 {new Date(caller.last_call_date).toLocaleDateString()}
                         </span>
+                        <span className="total-calls">
+                          📞 {caller.total_calls} calls
+                        </span>
+                      </div>
+
+                      {callerHistory.length > 0 && (
+                        <div className="caller-history-preview">
+                          <div className="history-title">Previous: {callerHistory[0].topic}</div>
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -365,6 +397,29 @@ function App() {
                     onChange={handleInputChange}
                     placeholder="555-123-4567"
                     required
+                  />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Location</label>
+                  <input
+                    type="text"
+                    name="location"
+                    value={formData.location}
+                    onChange={handleInputChange}
+                    placeholder="City, State"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Email (optional)</label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    placeholder="caller@email.com"
                   />
                 </div>
               </div>
