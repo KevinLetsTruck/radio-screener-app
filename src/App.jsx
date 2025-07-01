@@ -119,6 +119,8 @@ function App() {
 
   const submitCaller = async (targetStatus = 'active') => {
     try {
+      console.log('Submitting caller with status:', targetStatus)
+      
       const detailedNotes = [
         `Topic: ${formData.topic}`,
         formData.notes ? `Notes: ${formData.notes}` : '',
@@ -136,6 +138,8 @@ function App() {
         status: targetStatus
       }
 
+      console.log('Caller data being sent:', callerData)
+
       const response = await fetch(`${API_BASE}/api/callers`, {
         method: 'POST',
         headers: {
@@ -144,10 +148,16 @@ function App() {
         body: JSON.stringify(callerData)
       })
 
+      console.log('Response status:', response.status)
+
       if (!response.ok) {
         const errorText = await response.text()
+        console.error('API Error:', errorText)
         throw new Error(`Failed to add caller: ${response.status} - ${errorText}`)
       }
+
+      const result = await response.json()
+      console.log('Successfully added caller:', result)
 
       // Reset form
       setFormData({
@@ -163,20 +173,30 @@ function App() {
       setUploadedDocuments([])
       setShowForm(false)
       setCurrentCaller(null)
-      fetchCallers()
+      
+      // Refresh caller list
+      await fetchCallers()
 
       // Switch to queue tab if sending to host
-      if (targetStatus === 'ready') {
+      if (targetStatus === 'ready' || targetStatus === 'waiting') {
         setActiveTab('queue')
       }
 
     } catch (err) {
+      console.error('Submit caller error:', err)
       setError(`Error adding caller: ${err.message}`)
     }
   }
 
-  const addToQueue = () => submitCaller('waiting')
-  const sendToHost = () => submitCaller('ready')
+  const addToQueue = async () => {
+    console.log('Add to Queue clicked')
+    await submitCaller('waiting')
+  }
+  
+  const sendToHost = async () => {
+    console.log('Send to Host clicked')
+    await submitCaller('ready')
+  }
 
   const startNewCall = () => {
     setCurrentCaller({
