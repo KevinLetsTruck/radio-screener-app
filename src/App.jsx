@@ -153,13 +153,18 @@ function App() {
       if (!response.ok) {
         const errorText = await response.text()
         console.error('API Error:', errorText)
-        throw new Error(`Failed to add caller: ${response.status} - ${errorText}`)
+        
+        // Close modal before showing error
+        setShowForm(false)
+        setError(`Failed to add caller: ${response.status} - ${errorText}`)
+        return
       }
 
       const result = await response.json()
       console.log('Successfully added caller:', result)
 
-      // Reset form
+      // Success - close modal and reset form
+      setShowForm(false)
       setFormData({
         name: '',
         phone: '',
@@ -171,7 +176,6 @@ function App() {
         status: 'screening'
       })
       setUploadedDocuments([])
-      setShowForm(false)
       setCurrentCaller(null)
       
       // Refresh caller list
@@ -184,6 +188,8 @@ function App() {
 
     } catch (err) {
       console.error('Submit caller error:', err)
+      // Close modal before showing error
+      setShowForm(false)
       setError(`Error adding caller: ${err.message}`)
     }
   }
